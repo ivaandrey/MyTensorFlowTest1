@@ -4,14 +4,15 @@ import cv2
 from PIL import Image
 import pickle
 import os
+import shutil
 
 ## This functions creates 28x28 images wih gaussian noise as a background
 ## Point Target is inserted to each image in the random pixel
 
-def CreateOneImage(ImageDC,BackgSigma,ObjectSNR,XObject,YObject,AddObject):
+def CreateOneImage(ImageDC,ImageWidth,ImageHeight,BackgSigma,ObjectSNR,XObject,YObject,AddObject):
     # Create Background
-    ImageWidth=28
-    ImageHeight=28
+    #ImageWidth=28
+    #ImageHeight=28
     ImageBackg=ImageDC+np.random.randn(ImageWidth,ImageHeight)*BackgSigma
     OneImage=ImageBackg
     # Add Object
@@ -50,10 +51,12 @@ class ImageObject(object):
         add_to_pickle(Pklfullfilename, self.ObjectSNR)
 
 
-def SaveImageDataToPckl(DirectoryToSave,ImageVector,ImageLabel,ImageName,ObjectDataValid,ObjectXLoc,ObjectYLoc,ObjectSNR):
+def SaveImageDataToPckl(DirectoryToSave,ImageVector,ImageRow,ImageCol,ImageLabel,ImageName,ObjectDataValid,ObjectXLoc,ObjectYLoc,ObjectSNR):
     Pklfilename = ImageName + '.dat'
     Pklfullfilename = os.path.join(DirectoryToSave, Pklfilename)
     ImageDataDict={'ImageVector' : ImageVector,
+                   'ImageRow' : ImageRow,
+                   'ImageCol': ImageCol,
                    'ImageLabel' : ImageLabel,
                    'ImageName' : ImageName,
                    'ObjectDataValid' : ObjectDataValid,
@@ -62,113 +65,127 @@ def SaveImageDataToPckl(DirectoryToSave,ImageVector,ImageLabel,ImageName,ObjectD
                    'ObjectSNR' : ObjectSNR}
     add_to_pickle(Pklfullfilename, ImageDataDict)
 
+def CreateDataSet(DirectoryToSave, ImageWidth, ImageHeight, NumOfImagesWithObjectToCreate,ImageDC,BackgSigma):
+    ######################################################
+    ######## Object data creation ########################
+    ImageFormatToSave = '.png'
+    XObject = np.random.randint(low=1, high=ImageWidth - 1, size=NumOfImagesWithObjectToCreate)
+    YObject = np.random.randint(low=1, high=ImageHeight - 1, size=NumOfImagesWithObjectToCreate)
+    #ObjectSNR = np.random.randint(low=4, high=10, size=NumOfImagesWithObjectToCreate)
+    ObjectSNR = np.random.randint(low=10, high=20, size=NumOfImagesWithObjectToCreate)
+    Object_directory = os.path.join(DirectoryToSave, "Object")
+    shutil.rmtree(Object_directory, ignore_errors=True)# remove directory first
+    if not os.path.exists(Object_directory):
+        os.makedirs(Object_directory)
+    # Object ground truth file definition
+    gt_file_name = "ground_truth.txt"
+    full_gt_file_name = os.path.join(Object_directory, gt_file_name)
+    LinesToSaveInObjectGT = []
+    Header = "FrameNumber \tDataValid  \tXloc\tYloc\tSNR\t     ImageName\n"  # \t = a tab
+    LinesToSaveInObjectGT.append(Header)
+    ## Create images loop
+    print("Create Object data")
+    for i in range(NumOfImagesWithObjectToCreate):
+        AddObject = True
+        imageNum = i
+        Xc = XObject[i]
+        Yc = YObject[i]
+        print("Image num %d XObj %d YObj %d" % (imageNum, Xc, Yc))
+        OneImage = CreateOneImage(ImageDC, ImageWidth, ImageHeight, BackgSigma, ObjectSNR[i], Xc, Yc, AddObject)
+        # Save the image
+        ImageName = "img%06d" % (imageNum)
+        Imagefilename = ImageName + ImageFormatToSave
+        Fullfilename = os.path.join(Object_directory, Imagefilename)
+        # im = Image.fromarray(OneImage)
+        ar32 = OneImage.astype(np.uint32)
+        im = Image.fromarray(ar32)  # or more verbose as Image.fromarray(ar32, 'I')
+        im.save(Fullfilename)
+        # ["FrameNumber\tDataValid\tXloc\tYloc\tSNR\tImageName"]
+        GTLine = "  %04d\t           1\t     %d\t     %d\t     %d\t  %s\n" % (
+        imageNum, Xc, Yc, ObjectSNR[i], Imagefilename)
+        LinesToSaveInObjectGT.append(GTLine)
+        # plt.imshow(OneImage, cmap='gray')
+        # plt.show()
+
+        ## Create Image Object
+        ImageVector = np.ravel(OneImage)
+        ImageLabel = 1
+        # ImageObj=ImageObject(ImageVector,ImageLabel,ImageName,1,Xc,Yc,ObjectSNR[i])
+        # ImageObj.SaveImageObjectToPckl(Object_directory)
+        SaveImageDataToPckl(Object_directory, ImageVector, ImageHeight, ImageWidth, ImageLabel, ImageName, 1, Xc, Yc,
+                            ObjectSNR[i])
+
+        """
+        PklFileName=os.path.join(Object_directory,ImageName+'.dat')
+        with open(PklFileName, 'rb') as f:
+            x = pickle.load(f)
+        ty=1
+        """
+
+    # Write ground_truth_file
+    with open(full_gt_file_name, 'w') as gt_file:
+        gt_file.writelines(LinesToSaveInObjectGT)
+
+    ######################################################
+    ######## Object data creation ########################
+    # NoObject ground truth file definition
+    WithoutObject_directory = os.path.join(DirectoryToSave, "NoObject")
+    shutil.rmtree(WithoutObject_directory, ignore_errors=True)  # remove directory first
+    if not os.path.exists(WithoutObject_directory):
+        os.makedirs(WithoutObject_directory)
+
+    NoObj_gt_file_name = "ground_truth.txt"
+    full_NoObj_gt_file_name = os.path.join(WithoutObject_directory, NoObj_gt_file_name)
+    LinesToSaveInNoObjGT = []
+    LinesToSaveInNoObjGT.append(Header)
+
+    NumOfImagesNoObjectToCreate = NumOfImagesWithObjectToCreate
+
+    ## Create images loop
+    print("Create NOObject data")
+    for i in range(NumOfImagesNoObjectToCreate):
+        AddObject = False
+        imageNum = i+NumOfImagesWithObjectToCreate
+        Xc = -1
+        Yc = -1
+        SNR = -1
+        print("Image num %d XObj %d YObj %d" % (imageNum, Xc, Yc))
+        OneImage = CreateOneImage(ImageDC, ImageWidth, ImageHeight, BackgSigma, SNR, Xc, Yc, AddObject)
+        # Save the image
+        ImageName = "img%06d" % (imageNum)
+        Imagefilename = ImageName + ImageFormatToSave
+        Fullfilename = os.path.join(WithoutObject_directory, Imagefilename)
+        # im = Image.fromarray(OneImage)
+        ar32 = OneImage.astype(np.uint32)
+        im = Image.fromarray(ar32)  # or more verbose as Image.fromarray(ar32, 'I')
+        im.save(Fullfilename)
+        # ["FrameNumber\tDataValid\tXloc\tYloc\tSNR\tImageName"]
+        GTLine = "  %04d\t           0\t     %d\t     %d\t     %d\t  %s\n" % (imageNum, Xc, Yc, SNR, Imagefilename)
+        LinesToSaveInNoObjGT.append(GTLine)
+
+        ## Create Image Object
+        ImageVector = np.ravel(OneImage)
+        ImageLabel = 0
+        SaveImageDataToPckl(WithoutObject_directory, ImageVector, ImageHeight, ImageWidth, ImageLabel, ImageName, 0, Xc,
+                            Yc, SNR)
+
+        # ImageObj = ImageObject(ImageVector, ImageLabel, ImageName, 0, Xc, Yc, SNR)
+        # ImageObj.SaveImageObjectToPckl(WithoutObject_directory)
+    # Write ground_truth_file
+    with open(full_NoObj_gt_file_name, 'w') as gt_file:
+        gt_file.writelines(LinesToSaveInNoObjGT)
+
+
 
 
 ## main
-
-NumOfImagesWithObjectToCreate=100
-ImageDC=46000
-BackgSigma=10
-ObjectSNR=4
-ImageWidth=28
-ImageHeight=28
-ImageFormatToSave='.png'
-XObject=np.random.randint(low=1, high=ImageWidth-1, size=NumOfImagesWithObjectToCreate)
-YObject=np.random.randint(low=1, high=ImageHeight-1, size=NumOfImagesWithObjectToCreate)
-ObjectSNR=np.random.randint(low=4, high=10, size=NumOfImagesWithObjectToCreate)
-current_directory=os.getcwd()
-
-
-######################################################
-######## Object data creation ########################
-Object_directory=os.path.join(current_directory, "PointTargetProject\\Object")
-if not os.path.exists(Object_directory):
-        os.makedirs(Object_directory)
-# Object ground truth file definition
-gt_file_name="ground_truth.txt"
-full_gt_file_name=os.path.join(Object_directory, gt_file_name)
-LinesToSaveInObjectGT=[]
-Header="FrameNumber \tDataValid  \tXloc\tYloc\tSNR\t     ImageName\n" # \t = a tab
-LinesToSaveInObjectGT.append(Header)
-## Create images loop
-print("Create Object data")
-for i in range(NumOfImagesWithObjectToCreate):
-    AddObject=True
-    imageNum=i
-    Xc = XObject[i]
-    Yc = YObject[i]
-    print("Image num %d XObj %d YObj %d" %(imageNum,Xc,Yc))
-    OneImage=CreateOneImage(ImageDC,BackgSigma,ObjectSNR[i],Xc,Yc,AddObject)
-    # Save the image
-    ImageName= "img%06d" % (imageNum)
-    Imagefilename = ImageName+ImageFormatToSave
-    Fullfilename=os.path.join(Object_directory, Imagefilename)
-    #im = Image.fromarray(OneImage)
-    ar32 = OneImage.astype(np.uint32)
-    im = Image.fromarray(ar32)  # or more verbose as Image.fromarray(ar32, 'I')
-    im.save(Fullfilename)
-    # ["FrameNumber\tDataValid\tXloc\tYloc\tSNR\tImageName"]
-    GTLine="  %04d\t           1\t     %d\t     %d\t     %d\t  %s\n" %(imageNum,Xc,Yc,ObjectSNR[i],Imagefilename)
-    LinesToSaveInObjectGT.append(GTLine)
-    #plt.imshow(OneImage, cmap='gray')
-    #plt.show()
-
-    ## Create Image Object
-    ImageVector=np.ravel(OneImage)
-    ImageLabel=1
-    #ImageObj=ImageObject(ImageVector,ImageLabel,ImageName,1,Xc,Yc,ObjectSNR[i])
-    #ImageObj.SaveImageObjectToPckl(Object_directory)
-    SaveImageDataToPckl(Object_directory, ImageVector, ImageLabel, ImageName, 1, Xc, Yc, ObjectSNR[i])
-    PklFileName=os.path.join(Object_directory,ImageName+'.dat')
-    with open(PklFileName, 'rb') as f:
-        x = pickle.load(f)
-    ty=1
-
-# Write ground_truth_file
-with open(full_gt_file_name, 'w') as gt_file:
-    gt_file.writelines(LinesToSaveInObjectGT)
-
-######################################################
-######## Object data creation ########################
-# NoObject ground truth file definition
-WithoutObject_directory=os.path.join(current_directory, "PointTargetProject\\NoObject")
-if not os.path.exists(WithoutObject_directory):
-        os.makedirs(WithoutObject_directory)
-
-NoObj_gt_file_name="ground_truth.txt"
-full_NoObj_gt_file_name=os.path.join(WithoutObject_directory, NoObj_gt_file_name)
-LinesToSaveInNoObjGT=[]
-LinesToSaveInNoObjGT.append(Header)
-
-NumOfImagesNoObjectToCreate=NumOfImagesWithObjectToCreate
-
-## Create images loop
-print("Create NOObject data")
-for i in range(NumOfImagesNoObjectToCreate):
-    AddObject=False
-    imageNum=i
-    Xc = -1
-    Yc = -1
-    SNR = -1
-    print("Image num %d XObj %d YObj %d" % (imageNum, Xc, Yc))
-    OneImage = CreateOneImage(ImageDC, BackgSigma, SNR,Xc, Yc, AddObject)
-    # Save the image
-    ImageName = "img%06d" % (imageNum)
-    Imagefilename = ImageName + ImageFormatToSave
-    Fullfilename = os.path.join(WithoutObject_directory, Imagefilename)
-    #im = Image.fromarray(OneImage)
-    ar32 = OneImage.astype(np.uint32)
-    im = Image.fromarray(ar32)  # or more verbose as Image.fromarray(ar32, 'I')
-    im.save(Fullfilename)
-    # ["FrameNumber\tDataValid\tXloc\tYloc\tSNR\tImageName"]
-    GTLine = "  %04d\t           0\t     %d\t     %d\t     %d\t  %s\n" % (imageNum, Xc, Yc, SNR, Imagefilename)
-    LinesToSaveInNoObjGT.append(GTLine)
-
-    ## Create Image Object
-    ImageVector = np.ravel(OneImage)
-    ImageLabel = 0
-    ImageObj = ImageObject(ImageVector, ImageLabel, ImageName, 0, Xc, Yc, SNR)
-    ImageObj.SaveImageObjectToPckl(WithoutObject_directory)
-# Write ground_truth_file
-with open(full_NoObj_gt_file_name, 'w') as gt_file:
-    gt_file.writelines(LinesToSaveInNoObjGT)
+if __name__ == '__main__':
+    NumOfImagesWithObjectToCreate=1000
+    ImageDC=46000
+    BackgSigma=10
+    ImageWidth=28
+    ImageHeight=28
+    TrainSetDir = 'C:\\Andrey\\DeepLearning\\TensorF\\PointTargetProject\\MydataDir\\Train\\'
+    CreateDataSet(TrainSetDir, ImageWidth, ImageHeight, NumOfImagesWithObjectToCreate,ImageDC,BackgSigma)
+    TestSetDir = 'C:\\Andrey\\DeepLearning\\TensorF\\PointTargetProject\\MydataDir\\Test\\'
+    CreateDataSet(TestSetDir, ImageWidth, ImageHeight, NumOfImagesWithObjectToCreate, ImageDC, BackgSigma)
