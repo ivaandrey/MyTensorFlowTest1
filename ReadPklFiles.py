@@ -14,15 +14,25 @@ def ReadPklFile(PklFileName):
         x= pickle.load(f)
     return x
 
+def ReadAllPklFile(PathName):
+    all_files_data = []
+    folders = [f.path for f in os.scandir(PathName) if f.is_dir()]
+    if len(folders) == 0:
+        folders.append(PathName)
+    for cur_dir in folders:
+        full_curr_dir_name = os.path.join(PathName, cur_dir)
+        filesList = FindAllPklFilesInDirectory(full_curr_dir_name, 'dat')
+        for pklfile in filesList:
+            filename = os.path.join(full_curr_dir_name, pklfile)
+            fileData = ReadPklFile(filename)
+            all_files_data.append(fileData)
+    return all_files_data
+
 
 
 
 
 if __name__ == '__main__':
-    PathName='C:\\Andrey\\DeepLearning\\TensorF\\PointTargetProject\\Object'
-    filesList=FindAllPklFilesInDirectory(PathName, 'dat')
-    filename=os.path.join(PathName,filesList[0])
-    fileData=ReadPklFile(filename)
-    ImageVector=fileData['ImageVector']
-    print(fileData)
+    PathName='C:\\Andrey\\DeepLearning\\TensorF\\PointTargetProject\\MydataDir\\'
+    allPcklFilesData=ReadAllPklFile(PathName)
     ty=1
